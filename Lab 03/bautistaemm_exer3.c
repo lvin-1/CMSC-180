@@ -101,11 +101,28 @@ double* pearson_cor(int** mat, int* vecY, int row, int col){
     
 }
 
+// void setCPU(int core_id, pthread_attr_t * attr){
+//     // pthread_attr_t attr;
+//     cpu_set_t cpuset;
+
+//     // Initialize thread attributes
+//     pthread_attr_init(attr);
+
+//     // Clear the CPU set
+//     CPU_ZERO(&cpuset);
+//     // Set the CPU core
+//     CPU_SET(core_id, &cpuset);
+
+//     // Set CPU affinity attribute
+//     pthread_setaffinity(0, sizeof(cpu_set_t), &cpuset);
+// }
+
 typedef struct ARG{
     int** mat;
     int* vecY; 
     int row;
     int col;
+    int cpu;
     double* result;
     // int tnum;
 }args;
@@ -113,26 +130,20 @@ typedef struct ARG{
 void* pearson_cor_thread(void* arg){
     args * temp;
     temp = (args *) arg;
+    
+    // assign thread to a single CPU
+    cpu_set_t cpuset;
+    // Clear the CPU set
+    CPU_ZERO(&cpuset);
+    // Set the CPU core
+    CPU_SET(temp->cpu, &cpuset);
+    sched_setaffinity(0,sizeof(cpuset),&cpuset);
+
     temp->result = pearson_cor(temp->mat,temp->vecY,temp->row,temp->col);
     // printf("Thread %d Done!\n",temp->tnum);
     pthread_exit(NULL);
 }
 
-void setCPU(int core_id,pthread_attr_t* attr){
-    // pthread_attr_t attr;
-    cpu_set_t cpuset;
-
-    // Initialize thread attributes
-    pthread_attr_init(attr);
-
-    // Clear the CPU set
-    CPU_ZERO(&cpuset);
-    // Set the CPU core
-    CPU_SET(core_id, &cpuset);
-
-    // Set CPU affinity attribute
-    pthread_attr_setaffinity_np(attr, sizeof(cpu_set_t), &cpuset);
-}
 
 int main(){
 
@@ -141,8 +152,8 @@ int main(){
     int cols = 0;
     struct timeval start_time, end_time;
     double elapsed;
-    int cpu_to_use = 3;
-    int curr_cpu = 0;
+    int cpu_to_use = 4;
+    int curr_cpu = 1;
 
 
     printf("Input n: ");
@@ -152,7 +163,7 @@ int main(){
 
     args* arguments = (args*) malloc(num_threads * sizeof(args));   
     pthread_t tid[num_threads];
-    pthread_attr_t attr[num_threads];
+    // pthread_attr_t attr[num_threads];
     
     // Matrix Creation
     int **matrix = (int **)malloc(n * sizeof(int*));
@@ -216,6 +227,7 @@ int main(){
         arguments[j].mat = submatrices[j];
         arguments[j].vecY = vecY;
         arguments[j].row = n;
+        arguments[j].cpu = curr_cpu;
 
         if (j == (num_threads - 1) && num_threads != 1) {
             arguments[j].col = cols + excess_column;
@@ -224,17 +236,16 @@ int main(){
         }
         // Assign thread to a CPU core
         if(curr_cpu == 3) curr_cpu=0;
-        setCPU(curr_cpu, &attr[j]);
-        curr_cpu++;
 
          // Create thread
         pthread_create(&tid[j],NULL,pearson_cor_thread,(void *) &arguments[j]);
+        curr_cpu++;
     }
 
     // Wait for the threads to finish
     for(int k = 0; k<num_threads; k++){
 		pthread_join(tid[k], NULL);
-        pthread_attr_destroy(&attr[k]);
+        // pthread_attr_destroy(&attr[k]);
 	}
 
     // store the output of threaded pearson_cor into a single vector
