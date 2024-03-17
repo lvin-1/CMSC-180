@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <sys/time.h>
 #include <sched.h>
+#include <windows.h>
 
 void populateMatrix(int** mat, int row, int col){
     for (int j = 0; j<(row); j++){
@@ -101,22 +102,6 @@ double* pearson_cor(int** mat, int* vecY, int row, int col){
     
 }
 
-// void setCPU(int core_id, pthread_attr_t * attr){
-//     // pthread_attr_t attr;
-//     cpu_set_t cpuset;
-
-//     // Initialize thread attributes
-//     pthread_attr_init(attr);
-
-//     // Clear the CPU set
-//     CPU_ZERO(&cpuset);
-//     // Set the CPU core
-//     CPU_SET(core_id, &cpuset);
-
-//     // Set CPU affinity attribute
-//     pthread_setaffinity(0, sizeof(cpu_set_t), &cpuset);
-// }
-
 typedef struct ARG{
     int** mat;
     int* vecY; 
@@ -131,13 +116,9 @@ void* pearson_cor_thread(void* arg){
     args * temp;
     temp = (args *) arg;
     
-    // assign thread to a single CPU
-    cpu_set_t cpuset;
-    // Clear the CPU set
-    CPU_ZERO(&cpuset);
-    // Set the CPU core
-    CPU_SET(temp->cpu, &cpuset);
-    sched_setaffinity(0,sizeof(cpuset),&cpuset);
+    DWORD_PTR threadAffinityMask = (1 << temp->cpu);
+    HANDLE hThread = GetCurrentThread();
+    SetThreadAffinityMask(hThread, threadAffinityMask);
 
     temp->result = pearson_cor(temp->mat,temp->vecY,temp->row,temp->col);
     // printf("Thread %d Done!\n",temp->tnum);
@@ -152,8 +133,8 @@ int main(){
     int cols = 0;
     struct timeval start_time, end_time;
     double elapsed;
-    int cpu_to_use = 4;
-    int curr_cpu = 1;
+    int cpu_to_use = 3;
+    int curr_cpu = 0;
 
 
     printf("Input n: ");
@@ -224,6 +205,10 @@ int main(){
     gettimeofday(&start_time,NULL);
     for(int j = 0; j<num_threads; j++){
 
+        if(curr_cpu == cpu_to_use){
+            curr_cpu=0;
+        } 
+
         arguments[j].mat = submatrices[j];
         arguments[j].vecY = vecY;
         arguments[j].row = n;
@@ -234,8 +219,7 @@ int main(){
         } else {
             arguments[j].col = cols;
         }
-        // Assign thread to a CPU core
-        if(curr_cpu == 3) curr_cpu=0;
+        
 
          // Create thread
         pthread_create(&tid[j],NULL,pearson_cor_thread,(void *) &arguments[j]);
